@@ -239,6 +239,9 @@ jobs:
             
             # 4. 刷新配置并下载
             make defconfig
+            if [ "$DEV" = "128M-Ubootmod" ]; then
+              "$GITHUB_WORKSPACE/verify-128muboot-config.sh" .config
+            fi
             make download -j$(nproc)
             
             # 5. 开始编译
