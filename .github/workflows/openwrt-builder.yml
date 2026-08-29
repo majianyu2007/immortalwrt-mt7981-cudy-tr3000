@@ -111,9 +111,15 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
+      # tmate.io public servers were permanently shut down; use the maintained replacement.
       - name: ⌨️ SSH connection to Menuconfig
-        uses: mxschmitt/action-tmate@v3
+        id: upterm
+        uses: owenthereal/action-upterm@v1.15.0
         timeout-minutes: 90
+        with:
+          limit-access-to-actor: true
+          wait-timeout-minutes: 20
+          upterm-version: v0.24.0
           
       - name: 📤 Push config to main branch
         run: |
