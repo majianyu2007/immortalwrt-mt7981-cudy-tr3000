@@ -113,7 +113,7 @@ jobs:
 
       - name: ⌨️ SSH connection to Menuconfig
         uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 15
+        timeout-minutes: 90
           
       - name: 📤 Push config to main branch
         run: |
