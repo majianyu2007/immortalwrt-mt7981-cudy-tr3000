@@ -76,14 +76,14 @@ required_symbols=(
   PACKAGE_odhcp6c
   PACKAGE_odhcpd-ipv6only
   PACKAGE_firewall4
-  PACKAGE_nftables
+  PACKAGE_nftables-json
   PACKAGE_kmod-nft-nat
   PACKAGE_kmod-usb-net-rndis
   PACKAGE_kmod-usb-net-cdc-ether
   PACKAGE_python3-light
   PACKAGE_python3-urllib
   PACKAGE_ipset
-  PACKAGE_iptables
+  PACKAGE_iptables-nft
   PACKAGE_iptables-mod-tproxy
   PACKAGE_iptables-mod-extra
   PACKAGE_iptables-mod-ipopt
