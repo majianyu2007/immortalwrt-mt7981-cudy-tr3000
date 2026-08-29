@@ -17,6 +17,9 @@ readonly OPENCLASH_CORE_COMMIT="6625f341886253db3e44f9ded0cc1cd6b8bcbc3d"
 readonly OPENCLASH_CORE_SHA256="8252d16726041872825cdd9089c798c318f8862466b40b34d8bf62225ef57e34"
 readonly AGH_RULES_COMMIT="67fdd7759035221e59ce7f5b5ce05c83207e91a7"
 readonly AGH_RULES_SHA256="20bda9741dcbf0737f254f4af5f4632ace7ad9d257a198eaa05835c64a6fb549"
+readonly ADGUARDHOME_VERSION="0.107.78"
+readonly ADGUARDHOME_ARCHIVE_SHA256="71ef6d495d6d3fae45e6a80a172d44ae7f5aa528794cf927bb52fd5bff034eae"
+readonly TAILSCALE_RETAINED_VERSION="1.80.3"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -71,6 +74,96 @@ download_verified() {
 readonly RUST_MAKEFILE="feeds/packages/lang/rust/Makefile"
 require_file "$RUST_MAKEFILE"
 sed -i 's/ci-llvm=true/ci-llvm=false/g' "$RUST_MAKEFILE"
+
+# AdGuard Home 0.107.78 requires Go 1.26.5, while this 24.10 feed ships Go 1.23.
+# Use AdGuard's official static AArch64 release and preserve the existing init/config files.
+readonly ADGUARDHOME_MAKEFILE="feeds/packages/net/adguardhome/Makefile"
+readonly ADGUARDHOME_FILES="feeds/packages/net/adguardhome/files"
+require_file "$ADGUARDHOME_MAKEFILE"
+require_file "$ADGUARDHOME_FILES/adguardhome.init"
+require_file "$ADGUARDHOME_FILES/adguardhome.config"
+expect_count 1 'PKG_VERSION:=0.107.57' "$ADGUARDHOME_MAKEFILE"
+cat >"$ADGUARDHOME_MAKEFILE" <<'EOF'
+# SPDX-License-Identifier: GPL-2.0-only
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=adguardhome
+PKG_VERSION:=0.107.78
+PKG_RELEASE:=1
+
+AGH_ARCHIVE:=AdGuardHome_linux_arm64-$(PKG_VERSION).tar.gz
+PKG_BUILD_DIR:=$(BUILD_DIR)/AdGuardHome-$(PKG_VERSION)
+
+PKG_LICENSE:=GPL-3.0-only
+PKG_LICENSE_FILES:=AdGuardHome/LICENSE.txt
+PKG_CPE_ID:=cpe:/a:adguard:adguardhome
+PKG_MAINTAINER:=Dobroslaw Kijowski <dobo90@gmail.com>
+
+include $(INCLUDE_DIR)/package.mk
+
+define Download/adguardhome-prebuilt
+	URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)/
+	URL_FILE:=AdGuardHome_linux_arm64.tar.gz
+	FILE:=$(AGH_ARCHIVE)
+	HASH:=71ef6d495d6d3fae45e6a80a172d44ae7f5aa528794cf927bb52fd5bff034eae
+endef
+
+define Package/adguardhome
+	SECTION:=net
+	CATEGORY:=Network
+	TITLE:=Network-wide ads and trackers blocking DNS server
+	URL:=https://github.com/AdguardTeam/AdGuardHome
+	DEPENDS:=@aarch64 +ca-bundle
+endef
+
+define Package/adguardhome/conffiles
+/etc/adguardhome.yaml
+/etc/config/adguardhome
+endef
+
+define Package/adguardhome/description
+Free and open source, powerful network-wide ads and trackers blocking DNS server.
+endef
+
+define Build/Prepare
+	rm -rf $(PKG_BUILD_DIR)
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)
+	gzip -dc $(DL_DIR)/$(AGH_ARCHIVE) | $(HOST_TAR) -C $(PKG_BUILD_DIR) -xf -
+endef
+
+define Build/Configure
+endef
+
+define Build/Compile
+endef
+
+define Package/adguardhome/install
+	$(INSTALL_DIR) $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/AdGuardHome/AdGuardHome $(1)/usr/bin/AdGuardHome
+
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/adguardhome.init $(1)/etc/init.d/adguardhome
+
+	$(INSTALL_DIR) $(1)/etc/config
+	$(INSTALL_DATA) ./files/adguardhome.config $(1)/etc/config/adguardhome
+endef
+
+$(eval $(call Download,adguardhome-prebuilt))
+$(eval $(call BuildPackage,adguardhome))
+EOF
+expect_count 1 "PKG_VERSION:=$ADGUARDHOME_VERSION" "$ADGUARDHOME_MAKEFILE"
+expect_count 1 "HASH:=$ADGUARDHOME_ARCHIVE_SHA256" "$ADGUARDHOME_MAKEFILE"
+
+# Tailscale 1.102.3 declares Go 1.26.6; the existing Go 1.23.12 toolchain cannot build it.
+# Retain the known-good 1.80.3 recipe instead of changing the entire toolchain.
+readonly TAILSCALE_MAKEFILE="feeds/packages/net/tailscale/Makefile"
+readonly GOLANG_MAKEFILE="feeds/packages/lang/golang/golang/Makefile"
+require_file "$TAILSCALE_MAKEFILE"
+require_file "$GOLANG_MAKEFILE"
+expect_count 1 "PKG_VERSION:=$TAILSCALE_RETAINED_VERSION" "$TAILSCALE_MAKEFILE"
+expect_count 1 'GO_VERSION_MAJOR_MINOR:=1.23' "$GOLANG_MAKEFILE"
+expect_count 1 'GO_VERSION_PATCH:=12' "$GOLANG_MAKEFILE"
 
 # Add the build date to image names exactly once.
 readonly IMAGE_MAKEFILE="include/image.mk"
@@ -202,6 +295,8 @@ EOF
 chmod 0755 files/etc/uci-defaults/98-disable-unconfigured-services
 
 printf '%s\n' \
+  "Pinned AdGuard Home: $ADGUARDHOME_VERSION (official AArch64 release)" \
+  "Retained Tailscale: $TAILSCALE_RETAINED_VERSION (Go 1.23-compatible)" \
   "Pinned SMART SRun: $SMART_SRUN_COMMIT" \
   "Pinned UA3F: $UA3F_COMMIT" \
   "Pinned OpenClash Meta core: $OPENCLASH_CORE_COMMIT" \
