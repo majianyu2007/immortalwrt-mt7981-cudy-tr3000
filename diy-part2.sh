@@ -178,6 +178,18 @@ exit 0
 EOF
 chmod 0755 files/etc/uci-defaults/99-lan-ip
 
+# Keep optional network services inert until the user supplies local credentials/configuration.
+cat >files/etc/uci-defaults/98-disable-unconfigured-services <<'EOF'
+#!/bin/sh
+
+for service in openclash adguardhome tailscale smart_srun ua3f ddns; do
+  [ ! -x "/etc/init.d/$service" ] || "/etc/init.d/$service" disable
+done
+
+exit 0
+EOF
+chmod 0755 files/etc/uci-defaults/98-disable-unconfigured-services
+
 printf '%s\n' \
   "Pinned SMART SRun: $SMART_SRUN_COMMIT" \
   "Pinned UA3F: $UA3F_COMMIT" \
