@@ -4,22 +4,30 @@ set -Eeuo pipefail
 
 readonly CONFIG_FILE="${1:-.config}"
 
+error_count=0
+
 fail() {
   printf 'CONFIG VERIFICATION FAILED: %s\n' "$*" >&2
   exit 1
 }
 
+report_error() {
+  printf 'CONFIG VERIFICATION ERROR: %s\n' "$*" >&2
+  error_count=$((error_count + 1))
+}
+
 require_enabled() {
   local symbol="$1"
-  grep -Fxq "CONFIG_${symbol}=y" "$CONFIG_FILE" ||
-    fail "CONFIG_${symbol} must be built into the firmware"
+  if ! grep -Fxq "CONFIG_${symbol}=y" "$CONFIG_FILE"; then
+    report_error "CONFIG_${symbol} must be built into the firmware"
+  fi
 }
 
 require_disabled() {
   local symbol="$1"
   if grep -Fxq "CONFIG_${symbol}=y" "$CONFIG_FILE" ||
      grep -Fxq "CONFIG_${symbol}=m" "$CONFIG_FILE"; then
-    fail "CONFIG_${symbol} must remain disabled"
+    report_error "CONFIG_${symbol} must remain disabled"
   fi
 }
 
@@ -49,7 +57,7 @@ required_symbols=(
   PACKAGE_ethtool
   PACKAGE_tcpdump-mini
   PACKAGE_coreutils-timeout
-  PACKAGE_util-linux-flock
+  PACKAGE_flock
   PACKAGE_luci-app-ttyd
   PACKAGE_luci-app-bandix
   PACKAGE_bandix
@@ -127,6 +135,10 @@ done
 for symbol in "${disabled_symbols[@]}"; do
   require_disabled "$symbol"
 done
+
+if [ "$error_count" -ne 0 ]; then
+  fail "$error_count config contract violation(s) found in $CONFIG_FILE"
+fi
 
 printf 'Verified %d required and %d disabled config symbols in %s\n' \
   "${#required_symbols[@]}" \

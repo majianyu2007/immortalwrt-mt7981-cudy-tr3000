@@ -106,6 +106,17 @@ clone_package \
   "https://github.com/matthewlu070111/smart-srun.git" \
   "$SMART_SRUN_COMMIT" \
   "package/smart-srun"
+
+# The pinned package declares reciprocal conflicts that form a Kconfig dependency cycle.
+# Make the bundle conflict one-way: split packages still exclude the bundle without recursion.
+readonly SMART_SRUN_MAKEFILE="package/smart-srun/Makefile"
+require_file "$SMART_SRUN_MAKEFILE"
+expect_count 1 '  DEPENDS:=$(RUNTIME_DEPENDS)' "$SMART_SRUN_MAKEFILE"
+expect_count 1 '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"
+sed -i 's/^  DEPENDS:=$(RUNTIME_DEPENDS)$/  DEPENDS:=$(RUNTIME_DEPENDS)\n  CONFLICTS:=luci-app-smart-srun-bundle/' "$SMART_SRUN_MAKEFILE"
+sed -i '/^  CONFLICTS:=smart-srun luci-app-smart-srun$/d' "$SMART_SRUN_MAKEFILE"
+expect_count 2 '  CONFLICTS:=luci-app-smart-srun-bundle' "$SMART_SRUN_MAKEFILE"
+expect_count 0 '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"
 clone_package \
   "UA3F" \
   "https://github.com/SunBK201/UA3F.git" \
