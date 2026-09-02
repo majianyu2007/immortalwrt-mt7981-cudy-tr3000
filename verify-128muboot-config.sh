@@ -41,8 +41,6 @@ required_symbols=(
   PACKAGE_adguardhome
   PACKAGE_tailscale
   PACKAGE_luci-app-tailscale
-  PACKAGE_smart-srun
-  PACKAGE_luci-app-smart-srun
   PACKAGE_ua3f
   PACKAGE_ddns-scripts
   PACKAGE_ddns-scripts-cloudflare
@@ -51,6 +49,7 @@ required_symbols=(
   PACKAGE_usbutils
   PACKAGE_ip-full
   PACKAGE_curl
+  PACKAGE_libcurl
   PACKAGE_wget-ssl
   PACKAGE_ca-bundle
   PACKAGE_ca-certificates
@@ -83,20 +82,19 @@ required_symbols=(
   PACKAGE_kmod-nft-nat
   PACKAGE_kmod-usb-net-rndis
   PACKAGE_kmod-usb-net-cdc-ether
-  PACKAGE_python3-light
-  PACKAGE_python3-urllib
   PACKAGE_ipset
   PACKAGE_iptables-nft
   PACKAGE_iptables-mod-tproxy
   PACKAGE_iptables-mod-extra
   PACKAGE_iptables-mod-ipopt
+  PACKAGE_kmod-ipt-ipopt
   PACKAGE_iptables-mod-nfqueue
   PACKAGE_iptables-mod-conntrack-extra
   PACKAGE_kmod-nf-conntrack-netlink
+  PACKAGE_kmod-rkp-ipid
 )
 
 disabled_symbols=(
-  PACKAGE_luci-app-smart-srun-bundle
   PACKAGE_luci-app-adguardhome
   PACKAGE_dnsmasq
   PACKAGE_tcpdump

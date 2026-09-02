@@ -22,8 +22,8 @@ Three device variants, each with a saved buildroot config. The workflow input `d
 | `128M` | `config/128m.config` | `DEVICE_cudy_tr3000-v1` | stock 3-partition layout |
 | `128M-Ubootmod` | `config/128muboot.config` | `DEVICE_cudy_tr3000-v1-ubootmod` | **the fully customized image**; expanded UBI |
 
-`128muboot.config` is the one that actually carries the custom package set (AdGuard Home, Tailscale, SMART
-SRun, UA3F, DDNS, …). `128m.config` and `256m.config` are near-stock plus OpenClash. Only `128M-Ubootmod` is
+`128muboot.config` is the one that actually carries the custom package set (AdGuard Home, Tailscale, UA3F,
+DDNS, …). `128m.config` and `256m.config` are near-stock plus OpenClash. Only `128M-Ubootmod` is
 gated by `verify-128muboot-config.sh`.
 
 ## Build pipeline (`.github/workflows/openwrt-builder.yml`)
@@ -75,21 +75,13 @@ weaken the check.
 
 ### Pinned versions
 
-All pins live in one `readonly` block at the top of `diy-part2.sh`: SMART SRun / UA3F / OpenClash-core /
-AdGuard-rules commits, the OpenClash core and AGH rules SHA-256s, `ADGUARDHOME_VERSION`, and
-`TAILSCALE_RETAINED_VERSION`.
+All pins live in one `readonly` block at the top of `diy-part2.sh`: UA3F / OpenClash-core / AdGuard-rules
+commits, the OpenClash core and AGH rules SHA-256s, `ADGUARDHOME_VERSION`, and `TAILSCALE_RETAINED_VERSION`.
 
 **Gotcha:** the AdGuard Home archive SHA-256 appears *twice* — as `ADGUARDHOME_ARCHIVE_SHA256` and hardcoded as
 `HASH:=` inside the generated Makefile heredoc (heredoc is quoted, so no interpolation). A trailing
 `expect_count` catches a mismatch, but both must be edited together.
 
-### SMART SRun Kconfig cycle
-
-The pinned SMART SRun package declares *reciprocal* `CONFLICTS` between the bundle and the split packages,
-which Kconfig rejects as a dependency cycle. `diy-part2.sh` rewrites the Makefile to make the conflict
-one-way (split packages conflict with the bundle, not vice versa), guarded by `expect_count` on both the
-before and after state. This is why `PACKAGE_luci-app-smart-srun-bundle` must stay disabled while
-`smart-srun` and `luci-app-smart-srun` are enabled.
 
 ### Toolchain constraints driving the pins
 
@@ -117,9 +109,8 @@ Note it is intentionally checked against the *post-`defconfig`* `.config` in CI,
 saved config does not guarantee CI passes — `defconfig` can pull in or drop symbols.
 
 The disabled list encodes real decisions, not just noise: `dnsmasq` off / `dnsmasq-full` on, `tcpdump` off /
-`tcpdump-mini` on, `luci-app-adguardhome` off while `adguardhome` itself is on,
-`luci-app-smart-srun-bundle` off (see the Kconfig cycle note above), and a long list of heavy packages kept
-out for Actions disk/time budget.
+`tcpdump-mini` on, `luci-app-adguardhome` off while `adguardhome` itself is on, and a long list of heavy
+packages kept out for Actions disk/time budget.
 
 **When you add or remove a package in `config/128muboot.config`, update the corresponding list in this script
 in the same change.** Prefer asserting the concrete variant actually selected (e.g. `miniupnpd-nftables`, not
@@ -145,10 +136,9 @@ Hand-editing a `.config` is fine for small, well-understood changes, but keep th
 Baked in via `files/etc/uci-defaults/` from `diy-part2.sh`:
 
 - `99-lan-ip` sets LAN to **192.168.6.1** (nothing else in the network topology is changed)
-- `98-service-defaults` disables `openclash adguardhome ua3f ddns` on first boot (they need a subscription,
-  key or domain credential first) and enables `smart_srun` and `tailscale`. Note enabling tailscale's init
-  script only registers it at boot; its own uci `enabled` option still defaults to 0, so the daemon stays down
-  until it is switched on in LuCI. Keep new credential-requiring services in the disable list.
+- `98-service-defaults` disables `openclash adguardhome ua3f ddns` on first boot (they need credentials) and
+  enables the Tailscale init script. Tailscale's own uci `enabled` option still defaults to 0, so its daemon
+  stays down until it is switched on in LuCI. Keep new credential-requiring services in the disable list.
 - `files/etc/adguardhome-filter-presets.yaml` is an **inactive** preset (filters + 1240 user rules, asserted
   exactly), deliberately stripped of credentials/upstreams/ports/DHCP. It is not `AdGuardHome.yaml`.
 - `files/etc/openclash/core/clash_meta` — the arm64 Meta core, verified to be an `ARM aarch64` ELF; the feed's
