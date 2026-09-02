@@ -27,3 +27,7 @@ git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
 git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
 git clone https://github.com/timsaya/luci-app-bandix package/luci-app-bandix
 git clone https://github.com/timsaya/openwrt-bandix package/openwrt-bandix
+
+# LuCI front-end for Tailscale. The ImmortalWrt feeds ship the tailscale daemon
+# but no web UI, so the mesh can only be driven from the CLI without this.
+git clone https://github.com/asvow/luci-app-tailscale package/luci-app-tailscale

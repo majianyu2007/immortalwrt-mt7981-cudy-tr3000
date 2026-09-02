@@ -40,6 +40,7 @@ required_symbols=(
   PACKAGE_luci-app-openclash
   PACKAGE_adguardhome
   PACKAGE_tailscale
+  PACKAGE_luci-app-tailscale
   PACKAGE_smart-srun
   PACKAGE_luci-app-smart-srun
   PACKAGE_ua3f

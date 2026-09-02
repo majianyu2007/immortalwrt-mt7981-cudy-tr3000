@@ -11,7 +11,10 @@
 
 set -Eeuo pipefail
 
-readonly SMART_SRUN_COMMIT="ef00018a06593cbd2d3b424d1532dcc88d8b8246"
+readonly SMART_SRUN_REPO="https://github.com/matthewlu070111/smart-srun.git"
+# Track upstream instead of pinning a commit. Override to build from a fork:
+#   SMART_SRUN_REF=my-branch ./diy-part2.sh
+SMART_SRUN_REF="${SMART_SRUN_REF:-main}"
 readonly UA3F_COMMIT="23923d4dd813a5e15c2d896acf30bcb357f42fd1"
 readonly OPENCLASH_CORE_COMMIT="6625f341886253db3e44f9ded0cc1cd6b8bcbc3d"
 readonly OPENCLASH_CORE_SHA256="8252d16726041872825cdd9089c798c318f8862466b40b34d8bf62225ef57e34"
@@ -56,6 +59,27 @@ clone_package() {
   resolved="$(git -C "$destination" rev-parse HEAD)"
   [ "$resolved" = "$commit" ] ||
     die "$name resolved to $resolved instead of pinned commit $commit"
+}
+
+clone_latest() {
+  local name="$1"
+  local url="$2"
+  local ref="$3"
+  local destination="$4"
+
+  rm -rf "$destination"
+  git clone -q --depth 1 --branch "$ref" "$url" "$destination" ||
+    die "failed to clone $name ($ref) from $url"
+}
+
+# Newest vN.N.N tag upstream advertises; empty when the remote has no release tag.
+latest_release_version() {
+  git ls-remote --tags --refs "$1" 2>/dev/null |
+    awk -F/ '{print $NF}' |
+    grep -E '^v?[0-9]+(\.[0-9]+)*$' |
+    sed 's/^v//' |
+    sort -V |
+    tail -n1
 }
 
 download_verified() {
@@ -165,6 +189,30 @@ expect_count 1 "PKG_VERSION:=$TAILSCALE_RETAINED_VERSION" "$TAILSCALE_MAKEFILE"
 expect_count 1 'GO_VERSION_MAJOR_MINOR:=1.23' "$GOLANG_MAKEFILE"
 expect_count 1 'GO_VERSION_PATCH:=12' "$GOLANG_MAKEFILE"
 
+# luci-app-tailscale ships its own /etc/init.d/tailscale and /etc/config/tailscale,
+# and the base package ships the same two paths. Two packages owning one path fails
+# the image build at check_data_file_clashes, so exactly one of them must install
+# them. The LuCI app has to win: its web UI writes uci options (advertise_routes,
+# exit_node, access, authkey, login_server) that only its own init script reads, so
+# keeping the base init script would leave every switch in the UI silently inert.
+# The daemon binaries stay with the base package.
+expect_count 1 'tailscale.init $(1)/etc/init.d/tailscale' "$TAILSCALE_MAKEFILE"
+expect_count 1 'tailscale.conf $(1)/etc/config/tailscale' "$TAILSCALE_MAKEFILE"
+sed -i '/tailscale\.init \$(1)\/etc\/init\.d\/tailscale/d' "$TAILSCALE_MAKEFILE"
+sed -i '/tailscale\.conf \$(1)\/etc\/config\/tailscale/d' "$TAILSCALE_MAKEFILE"
+sed -i 's|\$(INSTALL_DIR) \$(1)/usr/sbin \$(1)/etc/init.d \$(1)/etc/config|$(INSTALL_DIR) $(1)/usr/sbin|' "$TAILSCALE_MAKEFILE"
+# /etc/config/tailscale now belongs to luci-app-tailscale, so it must not stay in
+# the base package's conffiles list (/etc/tailscale/ state dir stays).
+sed -i '/^\/etc\/config\/tailscale$/d' "$TAILSCALE_MAKEFILE"
+expect_count 0 '/etc/init.d/tailscale' "$TAILSCALE_MAKEFILE"
+expect_count 0 '/etc/config/tailscale' "$TAILSCALE_MAKEFILE"
+expect_count 1 '$(INSTALL_DIR) $(1)/usr/sbin' "$TAILSCALE_MAKEFILE"
+expect_count 1 '$(LN) tailscaled $(1)/usr/sbin/tailscale' "$TAILSCALE_MAKEFILE"
+require_file "package/luci-app-tailscale/Makefile"
+expect_count 1 'LUCI_DEPENDS:=+tailscale' "package/luci-app-tailscale/Makefile"
+require_file "package/luci-app-tailscale/root/etc/init.d/tailscale"
+require_file "package/luci-app-tailscale/root/etc/config/tailscale"
+
 # Add the build date to image names exactly once.
 readonly IMAGE_MAKEFILE="include/image.mk"
 require_file "$IMAGE_MAKEFILE"
@@ -194,22 +242,41 @@ expect_count 0 'model = "Cudy TR3000 v1 ubi 112M";' "$TR3000_DTS"
 
 # Inject pinned third-party packages after feeds are installed.
 mkdir -p package
-clone_package \
+clone_latest \
   "SMART SRun" \
-  "https://github.com/matthewlu070111/smart-srun.git" \
-  "$SMART_SRUN_COMMIT" \
+  "$SMART_SRUN_REPO" \
+  "$SMART_SRUN_REF" \
   "package/smart-srun"
+smart_srun_commit="$(git -C package/smart-srun rev-parse HEAD)"
 
-# The pinned package declares reciprocal conflicts that form a Kconfig dependency cycle.
+# Upstream declares reciprocal conflicts that form a Kconfig dependency cycle.
 # Make the bundle conflict one-way: split packages still exclude the bundle without recursion.
+# Now that this tracks upstream rather than a pinned commit, apply it only while the
+# reciprocal form is actually present -- upstream fixing it must not fail the build.
 readonly SMART_SRUN_MAKEFILE="package/smart-srun/Makefile"
 require_file "$SMART_SRUN_MAKEFILE"
-expect_count 1 '  DEPENDS:=$(RUNTIME_DEPENDS)' "$SMART_SRUN_MAKEFILE"
-expect_count 1 '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"
-sed -i 's/^  DEPENDS:=$(RUNTIME_DEPENDS)$/  DEPENDS:=$(RUNTIME_DEPENDS)\n  CONFLICTS:=luci-app-smart-srun-bundle/' "$SMART_SRUN_MAKEFILE"
-sed -i '/^  CONFLICTS:=smart-srun luci-app-smart-srun$/d' "$SMART_SRUN_MAKEFILE"
-expect_count 2 '  CONFLICTS:=luci-app-smart-srun-bundle' "$SMART_SRUN_MAKEFILE"
-expect_count 0 '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"
+if grep -Fq '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"; then
+  expect_count 1 '  DEPENDS:=$(RUNTIME_DEPENDS)' "$SMART_SRUN_MAKEFILE"
+  sed -i 's/^  DEPENDS:=$(RUNTIME_DEPENDS)$/  DEPENDS:=$(RUNTIME_DEPENDS)\n  CONFLICTS:=luci-app-smart-srun-bundle/' "$SMART_SRUN_MAKEFILE"
+  sed -i '/^  CONFLICTS:=smart-srun luci-app-smart-srun$/d' "$SMART_SRUN_MAKEFILE"
+  expect_count 2 '  CONFLICTS:=luci-app-smart-srun-bundle' "$SMART_SRUN_MAKEFILE"
+  expect_count 0 '  CONFLICTS:=smart-srun luci-app-smart-srun' "$SMART_SRUN_MAKEFILE"
+  smart_srun_cycle_patch="applied"
+else
+  smart_srun_cycle_patch="not needed (upstream no longer declares reciprocal CONFLICTS)"
+fi
+
+# Upstream keeps PKG_VERSION:=0.0.0 as a placeholder; the release CI injects the real
+# version at tag time. Building from a git checkout therefore reports v0.0.0, and
+# `srunnet update check` then claims an update is available forever. Derive the version
+# from the newest upstream release tag rather than hardcoding one here.
+smart_srun_version="$(latest_release_version "$SMART_SRUN_REPO")"
+if [ -n "$smart_srun_version" ] && grep -Fq 'PKG_VERSION:=0.0.0' "$SMART_SRUN_MAKEFILE"; then
+  sed -i "s/^PKG_VERSION:=0\.0\.0$/PKG_VERSION:=${smart_srun_version}/" "$SMART_SRUN_MAKEFILE"
+  expect_count 1 "PKG_VERSION:=${smart_srun_version}" "$SMART_SRUN_MAKEFILE"
+else
+  smart_srun_version="$(grep -m1 '^PKG_VERSION:=' "$SMART_SRUN_MAKEFILE" | cut -d= -f2)"
+fi
 clone_package \
   "UA3F" \
   "https://github.com/SunBK201/UA3F.git" \
@@ -282,22 +349,32 @@ exit 0
 EOF
 chmod 0755 files/etc/uci-defaults/99-lan-ip
 
-# Keep optional network services inert until the user supplies local credentials/configuration.
-cat >files/etc/uci-defaults/98-disable-unconfigured-services <<'EOF'
+# smart_srun ships with working campus credentials baked into config.json, so it is
+# useful from first boot. tailscale is registered at boot too, but its own uci option
+# `enabled` still defaults to 0, so the daemon stays down until it is switched on in
+# LuCI and `tailscale up` has authenticated once -- enabling the init script only means
+# the service exists at boot instead of having to be enabled by hand first.
+# Everything else needs a subscription, key or domain credential first, so it stays off.
+cat >files/etc/uci-defaults/98-service-defaults <<'EOF'
 #!/bin/sh
 
-for service in openclash adguardhome tailscale smart_srun ua3f ddns; do
+for service in openclash adguardhome ua3f ddns; do
   [ ! -x "/etc/init.d/$service" ] || "/etc/init.d/$service" disable
+done
+
+for service in smart_srun tailscale; do
+  [ ! -x "/etc/init.d/$service" ] || "/etc/init.d/$service" enable
 done
 
 exit 0
 EOF
-chmod 0755 files/etc/uci-defaults/98-disable-unconfigured-services
+chmod 0755 files/etc/uci-defaults/98-service-defaults
 
 printf '%s\n' \
   "Pinned AdGuard Home: $ADGUARDHOME_VERSION (official AArch64 release)" \
   "Retained Tailscale: $TAILSCALE_RETAINED_VERSION (Go 1.23-compatible)" \
-  "Pinned SMART SRun: $SMART_SRUN_COMMIT" \
+  "SMART SRun: ${SMART_SRUN_REF}@${smart_srun_commit} version=${smart_srun_version}" \
+  "SMART SRun Kconfig cycle patch: $smart_srun_cycle_patch" \
   "Pinned UA3F: $UA3F_COMMIT" \
   "Pinned OpenClash Meta core: $OPENCLASH_CORE_COMMIT" \
   "Pinned AdGuard Home rules: $AGH_RULES_COMMIT ($user_rule_count user rules)"
