@@ -60,6 +60,8 @@ required_symbols=(
   PACKAGE_coreutils-timeout
   PACKAGE_flock
   PACKAGE_luci-app-ttyd
+  PACKAGE_luci-app-wol
+  PACKAGE_etherwake
   PACKAGE_luci-app-bandix
   PACKAGE_bandix
   PACKAGE_luci-theme-aurora
