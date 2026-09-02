@@ -51,7 +51,7 @@ the same `files/` overlay.
 - `diy-part1.sh`: feed-source edits and packages that must exist before `feeds install` resolves symbols. Copies
   `package/luci-compat-keep` from this repo into the tree; clones the Aurora theme and Bandix packages.
 - `diy-part2.sh`: everything that patches installed feed content (`feeds/packages/...`, `feeds/luci/...`),
-  the DTS, `include/image.mk`, plus pinned third-party clones and the `files/` rootfs overlay.
+  the DTS, `include/image.mk`, pinned third-party artifacts, latest `rkp-ipid`, and the `files/` rootfs overlay.
 
 Other workflows: `uboot-builder.yml` builds DHCP U-Boot from `weekdaycare/bl-mt798x-dhcpd` (unrelated to the
 OpenWrt build); `update-checker.yml` polls upstream monthly and dispatches a full `all` build on new commits.
@@ -73,10 +73,13 @@ Never replace an assertion with a permissive `grep || true`, and never make a `s
 precondition now fails because upstream moved, update the pinned constant and re-derive the hash — do not
 weaken the check.
 
-### Pinned versions
+### External versions
 
 All pins live in one `readonly` block at the top of `diy-part2.sh`: UA3F / OpenClash-core / AdGuard-rules
 commits, the OpenClash core and AGH rules SHA-256s, `ADGUARDHOME_VERSION`, and `TAILSCALE_RETAINED_VERSION`.
+
+`rkp-ipid` intentionally follows the default branch of `kenzok8/jell` at build time. Its Makefile and kernel
+source are required explicitly so upstream layout drift fails the build instead of silently dropping the package.
 
 **Gotcha:** the AdGuard Home archive SHA-256 appears *twice* — as `ADGUARDHOME_ARCHIVE_SHA256` and hardcoded as
 `HASH:=` inside the generated Makefile heredoc (heredoc is quoted, so no interpolation). A trailing

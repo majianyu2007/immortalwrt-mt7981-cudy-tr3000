@@ -11,6 +11,7 @@
 
 set -Eeuo pipefail
 
+readonly RKP_IPID_REPO="https://github.com/kenzok8/jell.git"
 readonly UA3F_COMMIT="23923d4dd813a5e15c2d896acf30bcb357f42fd1"
 readonly OPENCLASH_CORE_COMMIT="6625f341886253db3e44f9ded0cc1cd6b8bcbc3d"
 readonly OPENCLASH_CORE_SHA256="8252d16726041872825cdd9089c798c318f8862466b40b34d8bf62225ef57e34"
@@ -216,7 +217,7 @@ expect_count 0 'reg = <0x5c0000 0x7000000>;' "$TR3000_DTS"
 expect_count 1 'model = "Cudy TR3000 v1 ubi 122M";' "$TR3000_DTS"
 expect_count 0 'model = "Cudy TR3000 v1 ubi 112M";' "$TR3000_DTS"
 
-# Inject pinned third-party packages after feeds are installed.
+# Inject third-party packages after feeds are installed.
 mkdir -p package
 clone_package \
   "UA3F" \
@@ -226,6 +227,17 @@ clone_package \
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+
+# Track the upstream default branch so new rkp-ipid fixes are picked up automatically.
+rkp_ipid_source="$tmp_dir/jell"
+git clone -q --depth 1 --filter=blob:none --sparse "$RKP_IPID_REPO" "$rkp_ipid_source" ||
+  die "failed to clone latest rkp-ipid source from $RKP_IPID_REPO"
+git -C "$rkp_ipid_source" sparse-checkout set rkp-ipid
+require_file "$rkp_ipid_source/rkp-ipid/Makefile"
+require_file "$rkp_ipid_source/rkp-ipid/src/rkp-ipid.c"
+rm -rf package/rkp-ipid
+cp -a "$rkp_ipid_source/rkp-ipid" package/rkp-ipid
+expect_count 1 'define KernelPackage/rkp-ipid' package/rkp-ipid/Makefile
 
 # OpenClash reads the Meta core from this exact path. Bundle only the arm64 Meta core.
 readonly OPENCLASH_CORE_SCRIPT="feeds/luci/applications/luci-app-openclash/root/usr/share/openclash/openclash_core.sh"
@@ -310,5 +322,6 @@ printf '%s\n' \
   "Pinned AdGuard Home: $ADGUARDHOME_VERSION (official AArch64 release)" \
   "Retained Tailscale: $TAILSCALE_RETAINED_VERSION (Go 1.23-compatible)" \
   "Pinned UA3F: $UA3F_COMMIT" \
+  "Latest rkp-ipid: kenzok8/jell default branch" \
   "Pinned OpenClash Meta core: $OPENCLASH_CORE_COMMIT" \
   "Pinned AdGuard Home rules: $AGH_RULES_COMMIT ($user_rule_count user rules)"
